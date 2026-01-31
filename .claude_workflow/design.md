@@ -12,7 +12,7 @@ graph TB
 
     subgraph Server
         API[Backend API<br/>Next.js + Hono]
-        DB[(Database<br/>PostgreSQL)]
+        DB[(Database<br/>SQLite / Turso)]
     end
 
     subgraph External
@@ -37,7 +37,7 @@ graph TB
 | パッケージ管理 | pnpm                      | 高速、ディスク効率、厳格な依存関係管理          |
 | Frontend       | Next.js 16 (App Router)   | 最新安定版、SSR対応、API Routes統合             |
 | Backend        | Next.js API Routes + Hono | Honoの軽量・高速なルーティング、型安全なAPI実装 |
-| Database       | PostgreSQL + Drizzle ORM  | 型安全、軽量、SQLライクな記述                   |
+| Database       | SQLite (Turso) + Drizzle ORM | 型安全、軽量、無料枠5GB、エッジ対応           |
 | Hosting        | Vercel                    | Next.jsとの親和性、Webhookサポート              |
 | Web Push       | web-push (npm)            | 標準的なWeb Push実装                            |
 
@@ -100,36 +100,42 @@ erDiagram
 
 ```typescript
 // src/db/schema.ts
-import { pgTable, text, timestamp, pgEnum, unique } from 'drizzle-orm/pg-core';
+import { sqliteTable, text, integer, unique } from 'drizzle-orm/sqlite-core';
 import { createId } from '@paralleldrive/cuid2';
-
-// Enum
-export const liveStateEnum = pgEnum('live_state', ['OFFLINE', 'LIVE']);
+import { sql } from 'drizzle-orm';
 
 // Users
-export const users = pgTable('users', {
+export const users = sqliteTable('users', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => createId()),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 });
 
 // Channels
-export const channels = pgTable('channels', {
+export const channels = sqliteTable('channels', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => createId()),
   channelId: text('channel_id').unique().notNull(),
   channelName: text('channel_name'),
-  liveState: liveStateEnum('live_state').default('OFFLINE').notNull(),
+  liveState: text('live_state', { enum: ['OFFLINE', 'LIVE'] })
+    .notNull()
+    .default('OFFLINE'),
   lastLiveVideoId: text('last_live_video_id'),
-  websubLeaseAt: timestamp('websub_lease_at'),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  websubLeaseAt: integer('websub_lease_at', { mode: 'timestamp' }),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 });
 
 // User Subscriptions
-export const userSubscriptions = pgTable(
+export const userSubscriptions = sqliteTable(
   'user_subscriptions',
   {
     id: text('id')
@@ -141,7 +147,9 @@ export const userSubscriptions = pgTable(
     channelId: text('channel_id')
       .notNull()
       .references(() => channels.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
   },
   (table) => ({
     userChannelUnique: unique().on(table.userId, table.channelId),
@@ -149,7 +157,7 @@ export const userSubscriptions = pgTable(
 );
 
 // Push Subscriptions
-export const pushSubscriptions = pgTable('push_subscriptions', {
+export const pushSubscriptions = sqliteTable('push_subscriptions', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => createId()),
@@ -159,11 +167,13 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
   endpoint: text('endpoint').unique().notNull(),
   p256dh: text('p256dh').notNull(),
   auth: text('auth').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 });
 
 // Notification Logs
-export const notificationLogs = pgTable('notification_logs', {
+export const notificationLogs = sqliteTable('notification_logs', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => createId()),
@@ -174,7 +184,9 @@ export const notificationLogs = pgTable('notification_logs', {
     .notNull()
     .references(() => channels.id, { onDelete: 'cascade' }),
   videoId: text('video_id').notNull(),
-  sentAt: timestamp('sent_at').defaultNow().notNull(),
+  sentAt: integer('sent_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 });
 ```
 
@@ -187,24 +199,26 @@ import { defineConfig } from 'drizzle-kit';
 export default defineConfig({
   schema: './src/db/schema.ts',
   out: './drizzle',
-  dialect: 'postgresql',
+  dialect: 'turso',
   dbCredentials: {
-    url: process.env.DATABASE_URL!,
+    url: process.env.TURSO_DATABASE_URL!,
+    authToken: process.env.TURSO_AUTH_TOKEN,
   },
 });
 ```
 
 ```typescript
 // src/db/index.ts
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
 import * as schema from './schema';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
-export const db = drizzle(pool, { schema });
+export const db = drizzle(client, { schema });
 ```
 
 ---
@@ -549,8 +563,9 @@ sequenceDiagram
 ## 9. 環境変数
 
 ```env
-# Database
-DATABASE_URL="postgresql://..."
+# Database (Turso)
+TURSO_DATABASE_URL="libsql://your-db-name.turso.io"
+TURSO_AUTH_TOKEN="your-auth-token"
 
 # YouTube Data API
 YOUTUBE_API_KEY="..."
