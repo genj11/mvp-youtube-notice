@@ -4,10 +4,16 @@ import { handleFeedUpdate } from '@/lib/notification';
 
 // WebSub検証（GET）
 export async function GET(request: NextRequest) {
+  // デバッグ: 完全なURLとパラメータをログ
+  console.log('WebSub GET request URL:', request.url);
+  console.log('WebSub GET searchParams:', Object.fromEntries(request.nextUrl.searchParams.entries()));
+
   const searchParams = request.nextUrl.searchParams;
   const mode = searchParams.get('hub.mode');
   const challenge = searchParams.get('hub.challenge');
   const topic = searchParams.get('hub.topic');
+
+  console.log(`WebSub GET: mode=${mode}, challenge=${challenge?.slice(0, 20)}..., topic=${topic}`);
 
   if (mode === 'subscribe' && challenge && topic) {
     console.log(`WebSub verified: ${topic}`);
