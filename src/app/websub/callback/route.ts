@@ -15,14 +15,27 @@ export async function GET(request: NextRequest) {
 
   console.log(`WebSub GET: mode=${mode}, challenge=${challenge?.slice(0, 20)}..., topic=${topic}`);
 
-  if (mode === 'subscribe' && challenge && topic) {
-    console.log(`WebSub verified: ${topic}`);
+  // 購読検証リクエスト（subscribe/unsubscribe）
+  if ((mode === 'subscribe' || mode === 'unsubscribe') && challenge && topic) {
+    console.log(`WebSub verified (${mode}): ${topic}`);
     return new NextResponse(challenge, {
       status: 200,
       headers: { 'Content-Type': 'text/plain' },
     });
   }
 
+  // パラメータなしのGETリクエスト（ヘルスチェックやpingなど）
+  // 400を返すとYouTubeが購読を解除する可能性があるため、200を返す
+  if (!mode && !challenge && !topic) {
+    console.log('WebSub GET: No parameters, returning OK');
+    return new NextResponse('OK', {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
+
+  // 不完全なパラメータの場合
+  console.log('WebSub GET: Invalid parameters');
   return new NextResponse('Bad Request', { status: 400 });
 }
 
