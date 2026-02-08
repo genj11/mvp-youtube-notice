@@ -65,10 +65,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`WebSub feed received: channel=${channelId}, video=${videoId}`);
 
-    // 非同期でライブ判定・通知処理
-    handleFeedUpdate(channelId, videoId).catch((e) => {
+    // ライブ判定・通知処理（awaitして完了を待つ）
+    try {
+      await handleFeedUpdate(channelId, videoId);
+    } catch (e) {
       console.error('handleFeedUpdate error:', e);
-    });
+    }
 
     return new NextResponse('OK', { status: 200 });
   } catch (e) {

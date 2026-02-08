@@ -58,8 +58,11 @@ export async function handleFeedUpdate(
 
   // 重複チェック: 同じvideoIdなら通知しない
   if (channel.lastLiveVideoId === videoId) {
+    console.log(`Duplicate video ${videoId}, skipping`);
     return;
   }
+
+  console.log('Updating channel state to LIVE');
 
   // 状態更新
   await db
