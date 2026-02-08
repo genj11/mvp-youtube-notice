@@ -25,6 +25,8 @@ export async function handleFeedUpdate(
   ytChannelId: string,
   videoId: string,
 ): Promise<void> {
+  console.log(`handleFeedUpdate: channelId=${ytChannelId}, videoId=${videoId}`);
+
   // チャンネルをDBから取得
   const channel = await db
     .select()
@@ -37,16 +39,20 @@ export async function handleFeedUpdate(
     return;
   }
 
+  console.log(`Channel found: id=${channel.id}, lastLiveVideoId=${channel.lastLiveVideoId}`);
+
   // YouTube APIでライブ判定
   let live: boolean;
   try {
     live = await isLive(videoId);
+    console.log(`YouTube API result: videoId=${videoId}, isLive=${live}`);
   } catch (e) {
     console.error('YouTube API error:', e);
     return;
   }
 
   if (!live) {
+    console.log(`Video ${videoId} is not live, skipping`);
     return;
   }
 
@@ -71,7 +77,10 @@ export async function handleFeedUpdate(
     .from(userSubscriptions)
     .where(eq(userSubscriptions.channelId, channel.id));
 
+  console.log(`Subscribers count: ${subscribers.length}`);
+
   if (subscribers.length === 0) {
+    console.log('No subscribers, skipping push');
     return;
   }
 
@@ -93,8 +102,11 @@ export async function handleFeedUpdate(
       .from(pushSubscriptions)
       .where(eq(pushSubscriptions.userId, userId));
 
+    console.log(`User ${userId} has ${subs.length} push subscriptions`);
+
     for (const sub of subs) {
       try {
+        console.log(`Sending push to endpoint: ${sub.endpoint.slice(0, 50)}...`);
         await webpush.sendNotification(
           {
             endpoint: sub.endpoint,
@@ -102,6 +114,7 @@ export async function handleFeedUpdate(
           },
           payload,
         );
+        console.log('Push sent successfully');
 
         // 通知ログ記録
         await db.insert(notificationLogs).values({
@@ -121,4 +134,5 @@ export async function handleFeedUpdate(
       }
     }
   }
+  console.log('handleFeedUpdate completed');
 }
