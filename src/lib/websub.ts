@@ -9,6 +9,8 @@ export async function subscribeWebSub(channelId: string): Promise<void> {
   const topic = `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${channelId}`;
   const callback = `${appUrl}/websub/callback`;
 
+  console.log(`WebSub subscribing: topic=${topic}, callback=${callback}`);
+
   const body = new URLSearchParams({
     'hub.callback': callback,
     'hub.topic': topic,
@@ -22,7 +24,10 @@ export async function subscribeWebSub(channelId: string): Promise<void> {
     body: body.toString(),
   });
 
+  const responseText = await response.text();
+  console.log(`WebSub hub response: status=${response.status}, body=${responseText}`);
+
   if (!response.ok) {
-    throw new Error(`WebSub subscribe failed: ${response.status} ${response.statusText}`);
+    throw new Error(`WebSub subscribe failed: ${response.status} ${response.statusText} - ${responseText}`);
   }
 }
